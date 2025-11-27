@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IOT Dashboard - Sensor Lingkungan</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <!-- Canvas Gauges -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-gauges@2.1.7/gauge.min.js"></script>
+
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background-color: #f4f7f9;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        .gauges {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .gauge-container {
+            width: 220px;
+        }
+        #chartArea { 
+            max-width: 800px; 
+            margin: 30px auto; 
+            padding: 20px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            color: white;
+        }
+        .status-running { background-color: #28a745; }
+        .status-error { background-color: #dc3545; }
+        .status-info { color: #6c757d; font-size: 0.9em; }
+        #errorMsg {
+            color: red;
+            display: none;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard Sensor Lingkungan</h1>
+        <p class="status-info">Data diambil dari GitHub setiap 2 detik.</p>
+        
+        <p>Status: <span id="statusBadge" class="status-badge status-running">CONNECTED</span></p>
+        <p>Diperbarui terakhir: <span id="lastUpdated">Menunggu data...</span></p>
+        <p id="errorMsg">Gagal mengambil data!</p>
+
+        <!-- GAUGES -->
+        <div class="gauges">
+            <div class="gauge-container">
+                <canvas id="gaugePressure" width="220" height="180"></canvas>
+                <p>Tekanan (hPa)</p>
+            </div>
+            <div class="gauge-container">
+                <canvas id="gaugeTemp" width="220" height="180"></canvas>
+                <p>Suhu (°C)</p>
+            </div>
+            <div class="gauge-container">
+                <canvas id="gaugeHumidity" width="220" height="180"></canvas>
+                <p>Kelembapan (%)</p>
+            </div>
+        </div>
+
+        <!-- CHART -->
+        <div id="chartArea">
+            <h2>Tren Tekanan Udara vs Waktu</h2>
+            <canvas id="pressureChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // 🔗 Ganti dengan URL RAW file JSON Anda di GitHub!
+        // Contoh: https://raw.githubusercontent.com/username/repo/main/sensor.json
+        const DATA_URL = 'https://raw.githubusercontent.com/bagasraja/uas-elka/refs/heads/main/sensor.json';
+        const MAX_DATA_POINTS = 20;
+
+        // --- Inisialisasi Gauge ---
+        const gaugePressure = new RadialGauge({
+            renderTo: 'gaugePressure',
+            width: 220,
+            height: 180,
+            units: 'hPa',
+            minValue: 950,
+            maxValue: 1050,
+            majorTicks: ['950', '975', '1000', '1025', '1050'],
+            minorTicks: 2,
+            strokeTicks: true,
+            highlights: [],
+            colorPlate: '#fff',
+            colorTitle: '#333',
+            colorNumbers: '#333',
+            colorNeedle: '#007bff',
+            needleType: 'line',
+            animationDuration: 500
+        }).draw();
+
+        const gaugeTemp = new RadialGauge({
+            renderTo: 'gaugeTemp',
+            width: 220,
+            height: 180,
+            units: '°C',
+            minValue: 0,
+            maxValue: 50,
+            majorTicks: ['0', '10', '20', '30', '40', '50'],
+            minorTicks: 2,
+            strokeTicks: true,
+            colorPlate: '#fff',
+            colorTitle: '#333',
+            colorNumbers: '#333',
+            colorNeedle: '#e67e22',
+            needleType: 'line',
+            animationDuration: 500
+        }).draw();
+
+        const gaugeHumidity = new RadialGauge({
+            renderTo: 'gaugeHumidity',
+            width: 220,
+            height: 180,
+            units: '%',
+            minValue: 0,
+            maxValue: 100,
+            majorTicks: ['0', '25', '50', '75', '100'],
+            minorTicks: 2,
+            strokeTicks: true,
+            colorPlate: '#fff',
+            colorTitle: '#333',
+            colorNumbers: '#333',
+            colorNeedle: '#2ecc71',
+            needleType: 'line',
+            animationDuration: 500
+        }).draw();
+
+        // --- Inisialisasi Chart ---
+        const chartData = {
+            labels: [],
+            datasets: [{
+                label: 'Tekanan Udara (hPa)',
+                data: [],
+                borderColor: '#007bff',
+                backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                fill: true,
+                tension: 0.3
+            }]
+        };
+
+        const ctx = document.getElementById('pressureChart').getContext('2d');
+        const pressureChart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        min: 950,
+                        max: 1050,
+                        title: { display: true, text: 'Tekanan (hPa)' }
+                    }
+                },
+                plugins: {
+                    legend: { display: true }
+                }
+            }
+        });
+
+        // --- FETCH DATA DARI GITHUB ---
+        async function fetchData() {
+            try {
+                const response = await fetch(`${DATA_URL}?t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                const { tekanan, suhu, kelembapan } = data;
+
+                // Validasi data
+                if (typeof tekanan !== 'number' || typeof suhu !== 'number' || typeof kelembapan !== 'number') {
+                    throw new Error('Format data tidak valid');
+                }
+
+                // Update UI
+                updateUI(tekanan, suhu, kelembapan);
+
+                // Update status
+                document.getElementById('statusBadge').className = 'status-badge status-running';
+                document.getElementById('statusBadge').textContent = 'CONNECTED';
+                document.getElementById('errorMsg').style.display = 'none';
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('statusBadge').className = 'status-badge status-error';
+                document.getElementById('statusBadge').textContent = 'ERROR';
+                document.getElementById('errorMsg').textContent = `Error: ${error.message}`;
+                document.getElementById('errorMsg').style.display = 'block';
+            }
+        }
+
+        function updateUI(tekanan, suhu, kelembapan) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('id-ID');
+
+            // Update gauge
+            gaugePressure.value = tekanan;
+            gaugeTemp.value = suhu;
+            gaugeHumidity.value = kelembapan;
+
+            // Update chart
+            if (chartData.labels.length >= MAX_DATA_POINTS) {
+                chartData.labels.shift();
+                chartData.datasets[0].data.shift();
+            }
+            chartData.labels.push(timeStr);
+            chartData.datasets[0].data.push(tekanan);
+
+            pressureChart.update('none');
+
+            document.getElementById('lastUpdated').textContent = now.toLocaleString('id-ID');
+        }
+
+        // Jalankan pertama kali
+        fetchData();
+
+        // Update setiap 2 detik
+        setInterval(fetchData, 2000);
+    </script>
+</body>
+</html>
